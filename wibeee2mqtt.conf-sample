@@ -1,0 +1,9 @@
+[global]
+debug = 0
+[owl]
+wibeee_url = http://your-wibeee-ip/en/status.xml
+[mqtt]
+address = 192.168.1.1
+port = 1883
+username = openhab
+password = test
