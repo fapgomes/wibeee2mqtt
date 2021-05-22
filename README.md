@@ -165,3 +165,5 @@ Number                  wibeeeFase4EnergiaReactivaI "Total Energia Reactiva Ind 
 Number                  wibeeeFase4EnergiaReactivaC "Total Energia Reactiva Cap [JS(divide1000.js):%.1f var]"   <energy>                (gWibeee)                                   { channel="mqtt:topic:mosquitto:wibeee2mqtt:fase4_energia_reactiva_cap" }
 
 ```
+
+![Screenshot_20210522_165143](https://user-images.githubusercontent.com/39247306/119232689-0a3b3f00-bb1e-11eb-85dc-aad567e25ac5.png)
