@@ -33,11 +33,15 @@ def on_publish(client, userdata, result):             #create function for callb
     pass
 
 def getpage(url):
-    http = urllib3.PoolManager()
+    timeout = urllib3.Timeout(connect=2.0, read=7.0)
+    http = urllib3.PoolManager(timeout=timeout)
+
+    my_logging('Getting page...')
     response = http.request('GET', url)
 
     if DEBUG :
         logging.debug(response.data)
+    my_logging('Returning page...')
 
     return response.data
 
