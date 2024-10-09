@@ -41,8 +41,10 @@ Start the service
 sudo systemctl start wibeee2mqtt
 ```
 # for homeassistant audodiscover you need to fill this on the global config:
+```
 ha = 1
 ha_discover_prefix = homeassistant
+```
 
 # openhab mqtt config example
 wibeee.things
