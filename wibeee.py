@@ -9,26 +9,27 @@ import logging, sys
 import urllib3
 
 Connected = 0
+HA_DISCOVERY_PUBLISHED = False  # Para garantir que só publique uma vez o autodiscovery
 
 def my_logging(msg):
-    if DEBUG :
+    if DEBUG:
         logging.debug(msg)
     syslog.syslog(syslog.LOG_INFO, msg)
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         my_logging('Connected to broker with the result code: ' + str(rc))
-        global Connected                #Use global variable
-        Connected = 1                   #Signal connection 
+        global Connected
+        Connected = 1  # Signal connection
     else:
         my_logging('Connected to broker failed with the result code: ' + str(rc))
 
 def on_disconnect(client, userdata, rc):
-   global Connected
-   Connected = 0
+    global Connected
+    Connected = 0
 
-def on_publish(client, userdata, result):             #create function for callback
-    if DEBUG :
+def on_publish(client, userdata, result):
+    if DEBUG:
         my_logging('Data published result: ' + str(result))
     pass
 
@@ -39,11 +40,101 @@ def getpage(url):
     my_logging('Getting page...')
     response = http.request('GET', url)
 
-    if DEBUG :
+    if DEBUG:
         logging.debug(response.data)
     my_logging('Returning page...')
 
     return response.data
+
+def publish_ha_discovery(client):
+    global HA_DISCOVERY_PUBLISHED
+
+    if not HA_DISCOVERY_PUBLISHED:
+        my_logging('Publishing Home Assistant discovery messages...')
+
+        # Lista de sensores a serem configurados
+        sensors = [
+            {"name": "Model", "state_topic": "wibeee/model", "device_class": "none", "unit": None},
+            {"name": "Timestamp", "state_topic": "wibeee/time", "device_class": "timestamp", "unit": None},
+            # l1
+            {"name": "L1 Voltage", "state_topic": "wibeee/fase1_vrms", "device_class": "voltage", "unit": "V"},
+            {"name": "L1 Current", "state_topic": "wibeee/fase1_irms", "device_class": "current", "unit": "A"},
+            {"name": "L1 Apparent Power", "state_topic": "wibeee/fase1_p_aparent", "device_class": "power", "unit": "VA"},
+            {"name": "L1 Active Power", "state_topic": "wibeee/fase1_p_activa", "device_class": "power", "unit": "W"},
+            {"name": "L1 Reactive Inductive Power", "state_topic": "wibeee/fase1_p_reactiva_ind", "device_class": "power", "unit": "var"},
+            {"name": "L1 Reactive Capacitive Power", "state_topic": "wibeee/fase1_p_reactiva_cap", "device_class": "power", "unit": "var"},
+            {"name": "L1 Frequency", "state_topic": "wibeee/fase1_frecuencia", "device_class": "frequency", "unit": "Hz"},
+            {"name": "L1 Power Factor", "state_topic": "wibeee/fase1_factor_potencia", "device_class": "power_factor", "unit": None},
+            {"name": "L1 Active Energy", "state_topic": "wibeee/fase1_energia_activa", "device_class": "energy", "unit": "Wh", "state_class": "total_increasing"},
+            {"name": "L1 Reactive Inductive Energy", "state_topic": "wibeee/fase1_energia_reactiva_ind", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            {"name": "L1 Reactive Capacitive Energy", "state_topic": "wibeee/fase1_energia_reactiva_cap", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            # l2
+            {"name": "L2 Voltage", "state_topic": "wibeee/fase2_vrms", "device_class": "voltage", "unit": "V"},
+            {"name": "L2 Current", "state_topic": "wibeee/fase2_irms", "device_class": "current", "unit": "A"},
+            {"name": "L2 Apparent Power", "state_topic": "wibeee/fase2_p_aparent", "device_class": "power", "unit": "VA"},
+            {"name": "L2 Active Power", "state_topic": "wibeee/fase2_p_activa", "device_class": "power", "unit": "W"},
+            {"name": "L2 Reactive Inductive Power", "state_topic": "wibeee/fase2_p_reactiva_ind", "device_class": "power", "unit": "var"},
+            {"name": "L2 Reactive Capacitive Power", "state_topic": "wibeee/fase2_p_reactiva_cap", "device_class": "power", "unit": "var"},
+            {"name": "L2 Frequency", "state_topic": "wibeee/fase2_frecuencia", "device_class": "frequency", "unit": "Hz"},
+            {"name": "L2 Power Factor", "state_topic": "wibeee/fase2_factor_potencia", "device_class": "power_factor", "unit": None},
+            {"name": "L2 Active Energy", "state_topic": "wibeee/fase2_energia_activa", "device_class": "energy", "unit": "Wh", "state_class": "total_increasing"},
+            {"name": "L2 Reactive Inductive Energy", "state_topic": "wibeee/fase2_energia_reactiva_ind", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            {"name": "L2 Reactive Capacitive Energy", "state_topic": "wibeee/fase2_energia_reactiva_cap", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            # l3
+            {"name": "L3 Voltage", "state_topic": "wibeee/fase3_vrms", "device_class": "voltage", "unit": "V"},
+            {"name": "L3 Current", "state_topic": "wibeee/fase3_irms", "device_class": "current", "unit": "A"},
+            {"name": "L3 Apparent Power", "state_topic": "wibeee/fase3_p_aparent", "device_class": "power", "unit": "VA"},
+            {"name": "L3 Active Power", "state_topic": "wibeee/fase3_p_activa", "device_class": "power", "unit": "W"},
+            {"name": "L3 Reactive Inductive Power", "state_topic": "wibeee/fase3_p_reactiva_ind", "device_class": "power", "unit": "var"},
+            {"name": "L3 Reactive Capacitive Power", "state_topic": "wibeee/fase3_p_reactiva_cap", "device_class": "power", "unit": "var"},
+            {"name": "L3 Frequency", "state_topic": "wibeee/fase3_frecuencia", "device_class": "frequency", "unit": "Hz"},
+            {"name": "L3 Power Factor", "state_topic": "wibeee/fase3_factor_potencia", "device_class": "power_factor", "unit": None},
+            {"name": "L3 Active Energy", "state_topic": "wibeee/fase3_energia_activa", "device_class": "energy", "unit": "Wh", "state_class": "total_increasing"},
+            {"name": "L3 Reactive Inductive Energy", "state_topic": "wibeee/fase3_energia_reactiva_ind", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            {"name": "L3 Reactive Capacitive Energy", "state_topic": "wibeee/fase3_energia_reactiva_cap", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            # l4 / total
+            {"name": "Total Voltage", "state_topic": "wibeee/fase4_vrms", "device_class": "voltage", "unit": "V"},
+            {"name": "Total Current", "state_topic": "wibeee/fase4_irms", "device_class": "current", "unit": "A"},
+            {"name": "Total Apparent Power", "state_topic": "wibeee/fase4_p_aparent", "device_class": "power", "unit": "VA"},
+            {"name": "Total Active Power", "state_topic": "wibeee/fase4_p_activa", "device_class": "power", "unit": "W"},
+            {"name": "Total Reactive Inductive Power", "state_topic": "wibeee/fase4_p_reactiva_ind", "device_class": "power", "unit": "var"},
+            {"name": "Total Reactive Capacitive Power", "state_topic": "wibeee/fase4_p_reactiva_cap", "device_class": "power", "unit": "var"},
+            {"name": "Total Frequency", "state_topic": "wibeee/fase4_frecuencia", "device_class": "frequency", "unit": "Hz"},
+            {"name": "Total Power Factor", "state_topic": "wibeee/fase4_factor_potencia", "device_class": "power_factor", "unit": None},
+            {"name": "Total Active Energy", "state_topic": "wibeee/fase4_energia_activa", "state_class": "total_increasing", "device_class": "energy", "unit": "Wh"},
+            {"name": "Total Reactive Inductive Energy", "state_topic": "wibeee/fase4_energia_reactiva_ind", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+            {"name": "Total Reactive Capacitive Energy", "state_topic": "wibeee/fase4_energia_reactiva_cap", "state_class": "total_increasing", "device_class": "energy", "unit": "varh"},
+        ]
+
+        for sensor in sensors:
+            sensor_config = {
+                "name": sensor["name"],
+                "state_topic": sensor["state_topic"],
+                "state_class": sensor.get("state_class"),  # Adiciona state_class se existir
+                "unit_of_measurement": sensor["unit"],
+                "device_class": sensor["device_class"],
+                "unique_id": f"wibeee_{sensor['name'].lower().replace(' ', '_')}",
+                "device": {
+                    "identifiers": ["wibeee"],
+                    "name": "Wibeee Energy Monitor",
+                    "model": "Wibeee",
+                    "manufacturer": "Wibeee Manufacturer"
+                }
+            }
+
+            # Serializando o dicionário em JSON
+            payload = json.dumps(sensor_config)
+
+            ha_topic = f"{HA_DISCOVER_TOPIC}/sensor/wibeee_{sensor['name'].lower().replace(' ', '_')}/config"
+            #client.publish(ha_topic, json.dumps(sensor_config), retain=True)
+            #my_logging(f"Published HA discovery for {sensor['name']} to topic {ha_topic}")
+            result = client.publish(ha_topic, payload, retain=True)
+
+            if DEBUG:
+                my_logging(f"Published HA discovery to topic {ha_topic}, payload: {payload}")
+
+
+        HA_DISCOVERY_PUBLISHED = True  # Marcar como publicado para não repetir
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -51,10 +142,10 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 config = configparser.ConfigParser()
 config.read('wibeee2mqtt.conf')
 
-# for debugging only
 DEBUG = int(config['global']['debug'])
-
 WIBEEE_URL = config['wibeee']['wibeee_url']
+HA = int(config['global'].get('ha', 0))  # Retorna 0 como padrão se 'ha' não estiver presente
+HA_DISCOVER_TOPIC = config['global'].get('ha_discover_prefix', 'homeassistant')
 
 broker_address = config['mqtt']['address']
 broker_port = int(config['mqtt']['port'])
@@ -74,20 +165,31 @@ while True:
     time.sleep(10)
     client.loop()
     my_logging('Connected: ' + str(Connected))
-    
+
     if Connected == 1:
-        # Collect the XML  message from a url
+        my_logging('HA enabled: ' + str(HA))
+        if HA == 1 and not HA_DISCOVERY_PUBLISHED:
+            # Publica as mensagens de autodiscovery para o Home Assistant
+            publish_ha_discovery(client)
+
+        # Coleta a mensagem XML de uma URL
         xml = getpage(WIBEEE_URL)
-        # Parse the XML string
+        # Parseia a string XML
         root = ElementTree.fromstring(xml)
 
         for child in root:
-            #print ("CHILD: " + child.tag + ": " + child.text)
-
-            if child.tag == 'time': 
-                my_logging('reading info, timestamp: ' + str(child.text))
-
-            client.publish("wibeee/"+child.tag, child.text)
+            # Se for a tag 'time', loga o timestamp
+            if child.tag == 'time':
+                try:
+                    unix_timestamp = int(child.text)  # Converte para inteiro
+                    iso_timestamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(unix_timestamp))
+                    my_logging('reading info, timestamp: ' + iso_timestamp)
+                    client.publish("wibeee/" + child.tag, iso_timestamp)
+                except ValueError:
+                    my_logging('Error: Invalid timestamp value in child.text')
+            else:
+                # Publica os dados lidos no tópico MQTT
+                client.publish("wibeee/" + child.tag, child.text)
     else:
         client.connect(broker_address, port=broker_port)
         time.sleep(5)
