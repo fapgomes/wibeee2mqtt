@@ -9,7 +9,7 @@ import logging, sys
 import urllib3
 
 Connected = 0
-HA_DISCOVERY_PUBLISHED = False  # Para garantir que só publique uma vez o autodiscovery
+HA_DISCOVERY_PUBLISHED = False  # to ensure that we only publish one time to autodiscovery
 
 def my_logging(msg):
     if DEBUG:
@@ -36,13 +36,14 @@ def on_publish(client, userdata, result):
 def getpage(url):
     timeout = urllib3.Timeout(connect=2.0, read=7.0)
     http = urllib3.PoolManager(timeout=timeout)
-
-    my_logging('Getting page...')
+    
+    if DEBUG:
+        my_logging('Getting page...')
     response = http.request('GET', url)
 
     if DEBUG:
         logging.debug(response.data)
-    my_logging('Returning page...')
+        my_logging('Returning page...')
 
     return response.data
 
@@ -52,7 +53,7 @@ def publish_ha_discovery(client):
     if not HA_DISCOVERY_PUBLISHED:
         my_logging('Publishing Home Assistant discovery messages...')
 
-        # Lista de sensores a serem configurados
+        # sensor list configured
         sensors = [
             {"name": "Model", "state_topic": "wibeee/model", "device_class": "none", "unit": None},
             {"name": "Timestamp", "state_topic": "wibeee/time", "device_class": "timestamp", "unit": None},
@@ -110,7 +111,7 @@ def publish_ha_discovery(client):
             sensor_config = {
                 "name": sensor["name"],
                 "state_topic": sensor["state_topic"],
-                "state_class": sensor.get("state_class"),  # Adiciona state_class se existir
+                "state_class": sensor.get("state_class"),  # if exists add this sensor
                 "unit_of_measurement": sensor["unit"],
                 "device_class": sensor["device_class"],
                 "unique_id": f"wibeee_{sensor['name'].lower().replace(' ', '_')}",
@@ -122,7 +123,7 @@ def publish_ha_discovery(client):
                 }
             }
 
-            # Serializando o dicionário em JSON
+            # Serializando the dictionary in JSON
             payload = json.dumps(sensor_config)
 
             ha_topic = f"{HA_DISCOVER_TOPIC}/sensor/wibeee_{sensor['name'].lower().replace(' ', '_')}/config"
@@ -134,7 +135,7 @@ def publish_ha_discovery(client):
                 my_logging(f"Published HA discovery to topic {ha_topic}, payload: {payload}")
 
 
-        HA_DISCOVERY_PUBLISHED = True  # Marcar como publicado para não repetir
+        HA_DISCOVERY_PUBLISHED = True  # marked as published
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -144,7 +145,7 @@ config.read('wibeee2mqtt.conf')
 
 DEBUG = int(config['global']['debug'])
 WIBEEE_URL = config['wibeee']['wibeee_url']
-HA = int(config['global'].get('ha', 0))  # Retorna 0 como padrão se 'ha' não estiver presente
+HA = int(config['global'].get('ha', 0))  # returns 0 as default
 HA_DISCOVER_TOPIC = config['global'].get('ha_discover_prefix', 'homeassistant')
 
 broker_address = config['mqtt']['address']
@@ -161,18 +162,22 @@ client.on_disconnect = on_disconnect
 client.on_publish = on_publish
 client.connect(broker_address, port=broker_port)
 
+# var to ensure the last value readed in fase4_energia_activa, because sometimes is less that the actual value
+last_fase4_energia_activa_value = None
+
 while True:
     time.sleep(10)
     client.loop()
-    my_logging('Connected: ' + str(Connected))
+    if DEBUG:
+        my_logging('HA enabled: ' + str(HA))
+        my_logging('Connected: ' + str(Connected))
 
     if Connected == 1:
-        my_logging('HA enabled: ' + str(HA))
         if HA == 1 and not HA_DISCOVERY_PUBLISHED:
-            # Publica as mensagens de autodiscovery para o Home Assistant
+            # publish autodiscover message to Home Assistant
             publish_ha_discovery(client)
 
-        # Coleta a mensagem XML de uma URL
+        # gets the XML message from wibeee URL
         xml = getpage(WIBEEE_URL)
         # Parseia a string XML
         root = ElementTree.fromstring(xml)
@@ -187,6 +192,27 @@ while True:
                     client.publish("wibeee/" + child.tag, iso_timestamp)
                 except ValueError:
                     my_logging('Error: Invalid timestamp value in child.text')
+            # if the tag is 'fase4_energia_activa', verify if the valor is incrementing
+            elif child.tag == 'fase4_energia_activa':
+                try:
+                    # value to float
+                    new_fase4_energia_activa_value = float(child.text)
+
+                    # if is the first time it will be None, only gets the value
+                    if last_fase4_energia_activa_value is None:
+                        last_fase4_energia_activa_value = new_fase4_energia_activa_value
+
+                    # verify is the new value is bigger that the last value
+                    elif new_fase4_energia_activa_value >= last_fase4_energia_activa_value:
+                        # Atualiza o último valor e publica no MQTT
+                        client.publish("wibeee/" + child.tag, child.text)
+                        last_fase4_energia_activa_value = new_fase4_energia_activa_value
+                        my_logging(f'Published new value for fase4_energia_activa: {new_fase4_energia_activa_value}')
+                    else:
+                        # if the value is lower, skip the post
+                        my_logging(f'Ignored lower value for fase4_energia_activa: {new_fase4_energia_activa_value}')
+                except ValueError:
+                    my_logging('Error: Invalid energy value in child.text')
             else:
                 # Publica os dados lidos no tópico MQTT
                 client.publish("wibeee/" + child.tag, child.text)
