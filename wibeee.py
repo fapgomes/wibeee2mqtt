@@ -34,18 +34,39 @@ def on_publish(client, userdata, result):
     pass
 
 def getpage(url):
+    # Define timeouts for connection and reading
     timeout = urllib3.Timeout(connect=2.0, read=7.0)
+    # Create a PoolManager for HTTP requests
     http = urllib3.PoolManager(timeout=timeout)
     
     if DEBUG:
         my_logging('Getting page...')
-    response = http.request('GET', url)
 
-    if DEBUG:
-        logging.debug(response.data)
-        my_logging('Returning page...')
+    try:
+        # Make the HTTP GET request
+        response = http.request('GET', url)
 
-    return response.data
+        # Check if the response status is 200 (OK)
+        if response.status == 200:
+            if DEBUG:
+                logging.debug(response.data)
+                my_logging('Returning page...')
+            return response.data  # Return the page content
+        else:
+            my_logging(f'Error: Received status code {response.status}')
+            return None
+
+    except MaxRetryError:
+        my_logging(f'Error: Max retries exceeded trying to reach {url}')
+    except TimeoutError:
+        my_logging(f'Error: Timeout trying to reach {url}')
+    except HTTPError as e:
+        my_logging(f'HTTP error occurred: {e}')
+    except Exception as e:
+        my_logging(f'An unexpected error occurred: {e}')
+
+    # Return None if there's any error
+    return None
 
 def publish_ha_discovery(client):
     global HA_DISCOVERY_PUBLISHED
@@ -178,10 +199,26 @@ while True:
             publish_ha_discovery(client)
 
         # gets the XML message from wibeee URL
-        xml = getpage(WIBEEE_URL)
-        # Parseia a string XML
-        root = ElementTree.fromstring(xml)
+        try:
+            xml = getpage(WIBEEE_URL)
 
+            # Check if xml is None or empty (possible connection failure)
+            if xml is None or xml.strip() == "":
+                my_logging("Failed to retrieve XML data or received empty response.")
+                continue  # Skip the rest of the loop and try again later
+
+            # Try to parse the XML
+            try:
+                root = ElementTree.fromstring(xml)
+            except ElementTree.ParseError as e:
+                my_logging(f"Error parsing XML: {e}")
+                continue  # Skip to the next iteration of the loop
+
+        except Exception as e:
+            my_logging(f"Error fetching XML from Wibeee: {e}")
+            continue  # Skip to the next iteration of the loop
+
+        # Process the XML
         for child in root:
             # Se for a tag 'time', loga o timestamp
             if child.tag == 'time':
@@ -195,12 +232,18 @@ while True:
             # if the tag is 'fase4_energia_activa', verify if the valor is incrementing
             elif child.tag == 'fase4_energia_activa':
                 try:
+                    # check if the value is not empty
+                    if child.text is None or child.text.strip() == "":
+                        my_logging('Error: Missing value for fase4_energia_activa, skipping...')
+                        continue  # do nothing 
+
                     # value to float
                     new_fase4_energia_activa_value = float(child.text)
 
                     # if is the first time it will be None, only gets the value
                     if last_fase4_energia_activa_value is None:
                         last_fase4_energia_activa_value = new_fase4_energia_activa_value
+                        my_logging(f'First time publish!')
 
                     # verify is the new value is bigger that the last value
                     elif new_fase4_energia_activa_value >= last_fase4_energia_activa_value:
