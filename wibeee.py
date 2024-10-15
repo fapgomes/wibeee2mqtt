@@ -252,7 +252,8 @@ while True:
                         last_fase4_energia_activa_value = new_fase4_energia_activa_value
                         my_logging(f'Published new value for fase4_energia_activa: {new_fase4_energia_activa_value}')
                     else:
-                        # if the value is lower, skip the post
+                        # if the value is lower, publish the last value
+                        client.publish("wibeee/" + child.tag, last_fase4_energia_activa_value)
                         my_logging(f'Ignored lower value for fase4_energia_activa: {new_fase4_energia_activa_value}')
                 except ValueError:
                     my_logging('Error: Invalid energy value in child.text')
